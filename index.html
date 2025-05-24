@@ -73,6 +73,7 @@
     let gameOver = false;
     let victory = false;
     let timer = 60;
+    let gameStarted = false;
 
     document.addEventListener("keydown", e => keys[e.key] = true);
     document.addEventListener("keyup", e => keys[e.key] = false);
@@ -95,7 +96,7 @@
           }
         });
       });
-
+      
       balls = [
         { x: canvas.width / 2, y: 200, dx: 4.5, dy: 4.5, radius: BALL_RADIUS, active: true },
         { x: canvas.width / 2 + 30, y: 220, dx: -4.5, dy: 4.5, radius: BALL_RADIUS, active: true },
@@ -106,6 +107,9 @@
       victory = false;
       timer = 60;
       lastExtraBallTime = 0;
+      gameStarted = true;
+      lastTime = performance.now();
+      startTime = lastTime;
       requestAnimationFrame(gameLoop);
     }
 
@@ -171,6 +175,7 @@
     }
 
     function maintainBallCount() {
+      if (gameOver) return;
       const activeBalls = balls.filter(b => b.active).length;
       while (balls.filter(b => b.active).length < 3) {
         spawnNewBall();
@@ -237,7 +242,7 @@
     }
 
     function checkGameStatus(deltaTime) {
-      if (!gameOver) {
+      if (!gameOver && gameStarted) {
         timer -= deltaTime / 1000;
         const remaining = blocks.filter(b => b.status && !b.isCore).length;
         if (remaining === 0 && timer > 0) {
@@ -285,3 +290,4 @@
   </script>
 </body>
 </html>
+
