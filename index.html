@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ブロック崩され</title>
+  <style>
+    canvas {
+      background: #000;
+      display: block;
+      margin: 0 auto;
+    }
+    body {
+      text-align: center;
+      font-family: sans-serif;
+      background-color: #111;
+      color: #fff;
+    }
+    #startScreen {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.85);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+    #startScreen button {
+      font-size: 24px;
+      padding: 10px 20px;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div id="startScreen">
+    <h1>ブロック崩され</h1>
+    <p>矢印キーでブロック群を操作しよう。コアブロックを守りきれ！</p>
+    <button onclick="startGame()">スタート</button>
+  </div>
+  <canvas id="gameCanvas" width="800" height="600" style="display:none;"></canvas>
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const BLOCK_PATTERN = [
+      "  xxxx  ",
+      " xxxxxxx",
+      "xxCxxxx",
+      " xxxxxxx",
+      "  xxxx  "
+    ];
+
+    const BLOCK_WIDTH = 80;
+    const BLOCK_HEIGHT = 20;
+    const BLOCK_MARGIN = 5;
+    const BLOCK_SPEED_BASE = 15.0;
+
+    const PADDLE_WIDTH = 100;
+    const PADDLE_HEIGHT = 15;
+    const PADDLE_Y = canvas.height - 30;
+
+    const BALL_RADIUS = 8;
+
+    let blocks = [];
+    let coreBlock = null;
+    let paddle = { x: canvas.width / 2 - PADDLE_WIDTH / 2, y: PADDLE_Y, width: PADDLE_WIDTH, height: PADDLE_HEIGHT };
+    let balls = [];
+    let extraBallInterval = 15;
+    let lastExtraBallTime = 0;
+
+    let keys = {};
+    let gameOver = false;
+    let victory = false;
+    let timer = 60;
+
+    document.addEventListener("keydown", e => keys[e.key] = true);
+    document.addEventListener("keyup", e => keys[e.key] = false);
+
+    function initializeGame() {
+      blocks = [];
+      coreBlock = null;
+
+      BLOCK_PATTERN.forEach((row, rIdx) => {
+        [...row].forEach((char, cIdx) => {
+          if (char === 'x' || char === 'C') {
+            const block = {
+              x: cIdx * (BLOCK_WIDTH + BLOCK_MARGIN) + 100,
+              y: rIdx * (BLOCK_HEIGHT + BLOCK_MARGIN) + 50,
+              status: 1,
+              isCore: char === 'C'
+            };
+            blocks.push(block);
+            if (block.isCore) coreBlock = block;
+          }
+        });
+      });
+
+      balls = [
+        { x: canvas.width / 2, y: 200, dx: 4.5, dy: 4.5, radius: BALL_RADIUS, active: true },
+        { x: canvas.width / 2 + 30, y: 220, dx: -4.5, dy: 4.5, radius: BALL_RADIUS, active: true },
+        { x: canvas.width / 2 - 30, y: 240, dx: 4.5, dy: -4.5, radius: BALL_RADIUS, active: true },
+      ];
+
+      gameOver = false;
+      victory = false;
+      timer = 60;
+      lastExtraBallTime = 0;
+      requestAnimationFrame(gameLoop);
+    }
+
+    function moveBlocks() {
+      let dx = 0, dy = 0;
+      const blockCount = blocks.filter(b => b.status).length || 1;
+      const moveSpeed = BLOCK_SPEED_BASE / blockCount;
+
+      if (keys["ArrowLeft"]) dx = -moveSpeed;
+      if (keys["ArrowRight"]) dx = moveSpeed;
+      if (keys["ArrowUp"]) dy = -moveSpeed;
+      if (keys["ArrowDown"]) dy = moveSpeed;
+
+      for (let b of blocks) {
+        b.x += dx;
+        b.y += dy;
+      }
+    }
+
+    function movePaddleAI() {
+      let targetBall = balls.find(b => b.active) || balls[0];
+      if (targetBall.x < paddle.x + paddle.width / 2) paddle.x -= 25;
+      else if (targetBall.x > paddle.x + paddle.width / 2) paddle.x += 25;
+
+      paddle.x = Math.max(0, Math.min(canvas.width - paddle.width, paddle.x));
+    }
+
+    function drawBlocks() {
+      for (let b of blocks) {
+        if (b.status) {
+          ctx.fillStyle = b.isCore ? "#f0f" : "#0f0";
+          ctx.fillRect(b.x, b.y, BLOCK_WIDTH, BLOCK_HEIGHT);
+        }
+      }
+    }
+
+    function drawPaddle() {
+      ctx.fillStyle = "#09f";
+      ctx.fillRect(paddle.x, paddle.y, paddle.width, paddle.height);
+    }
+
+    function drawBalls() {
+      for (let ball of balls) {
+        if (ball.active) {
+          ctx.beginPath();
+          ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+          ctx.fillStyle = "#f00";
+          ctx.fill();
+          ctx.closePath();
+        }
+      }
+    }
+
+    function spawnNewBall() {
+      balls.push({
+        x: Math.random() * (canvas.width - BALL_RADIUS * 2) + BALL_RADIUS,
+        y: -20,
+        dx: 4.5 * (Math.random() < 0.5 ? -1 : 1),
+        dy: 4.5,
+        radius: BALL_RADIUS,
+        active: true
+      });
+    }
+
+    function maintainBallCount() {
+      const activeBalls = balls.filter(b => b.active).length;
+      while (balls.filter(b => b.active).length < 3) {
+        spawnNewBall();
+      }
+    }
+
+    function collisionDetection(ball) {
+      for (let b of blocks) {
+        if (b.status) {
+          if (
+            ball.x > b.x && ball.x < b.x + BLOCK_WIDTH &&
+            ball.y > b.y && ball.y < b.y + BLOCK_HEIGHT
+          ) {
+            ball.dy *= -1;
+            b.status = 0;
+            if (b.isCore && !victory) {
+              gameOver = true;
+              victory = false;
+            }
+            return;
+          }
+        }
+      }
+
+      if (
+        ball.x > paddle.x && ball.x < paddle.x + paddle.width &&
+        ball.y + ball.radius > paddle.y && ball.y < paddle.y + paddle.height
+      ) {
+        ball.dy *= -1;
+        ball.y = paddle.y - ball.radius;
+        return;
+      }
+
+      if (ball.x + ball.dx < 0 || ball.x + ball.dx > canvas.width) ball.dx *= -1;
+      if (ball.y + ball.dy < 0) ball.dy *= -1;
+      if (ball.y + ball.dy > canvas.height) {
+        ball.active = false;
+      }
+    }
+
+    function updateBalls() {
+      for (let ball of balls) {
+        if (ball.active) {
+          ball.x += ball.dx;
+          ball.y += ball.dy;
+          collisionDetection(ball);
+        }
+      }
+      maintainBallCount();
+    }
+
+    function spawnExtraBall(elapsedTime) {
+      if (elapsedTime - lastExtraBallTime >= extraBallInterval) {
+        spawnNewBall();
+        lastExtraBallTime = elapsedTime;
+      }
+    }
+
+    function drawHUD() {
+      ctx.font = "18px sans-serif";
+      ctx.fillStyle = "#fff";
+      ctx.fillText(`残りブロック: ${blocks.filter(b => b.status && !b.isCore).length}`, 10, 20);
+      ctx.fillText(`時間: ${Math.max(0, Math.ceil(timer))}秒`, 10, 40);
+    }
+
+    function checkGameStatus(deltaTime) {
+      if (!gameOver) {
+        timer -= deltaTime / 1000;
+        const remaining = blocks.filter(b => b.status && !b.isCore).length;
+        if (remaining === 0 && timer > 0) {
+          gameOver = true;
+          victory = true;
+        } else if (timer <= 0) {
+          gameOver = true;
+          victory = false;
+        }
+      }
+    }
+
+    let lastTime = performance.now();
+    let startTime = lastTime;
+    function gameLoop(now = performance.now()) {
+      let deltaTime = now - lastTime;
+      lastTime = now;
+      let elapsedTime = (now - startTime) / 1000;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (!gameOver) {
+        spawnExtraBall(elapsedTime);
+        moveBlocks();
+        movePaddleAI();
+        updateBalls();
+        drawBlocks();
+        drawPaddle();
+        drawBalls();
+        drawHUD();
+        checkGameStatus(deltaTime);
+        requestAnimationFrame(gameLoop);
+      } else {
+        ctx.font = "32px sans-serif";
+        ctx.fillStyle = victory ? "#0f0" : "#f00";
+        ctx.fillText(victory ? "勝利！" : "ゲームオーバー", canvas.width / 2 - 80, canvas.height / 2);
+      }
+    }
+
+    function startGame() {
+      document.getElementById("startScreen").style.display = "none";
+      canvas.style.display = "block";
+      initializeGame();
+    }
+  </script>
+</body>
+</html>
